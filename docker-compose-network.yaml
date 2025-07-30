@@ -1,0 +1,13 @@
+version: "3.3"
+services:
+  network-scanner-web:
+    privileged: true
+    ports:
+      - 5000:5000
+    image: network-scanner-web
+    networks:
+      - proxy-redirect
+networks:
+  proxy-redirect:
+    external: true
+    driver: bridge
