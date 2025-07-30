@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络设备扫描工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#1e40af',
+                        accent: '#60a5fa',
+                        neutral: '#f3f4f6',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .device-card {
+                @apply bg-white rounded-lg shadow-md p-4 transition-all duration-300 hover:shadow-lg border-l-4;
+            }
+            .device-card-online {
+                @apply border-primary;
+            }
+            .device-card-offline {
+                @apply border-gray-300;
+            }
+            .btn-primary {
+                @apply bg-primary hover:bg-secondary text-white font-medium py-2 px-4 rounded transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5;
+            }
+            .input-field {
+                @apply border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- 导航栏 -->
+    <nav class="bg-primary text-white shadow-md">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-wifi text-xl"></i>
+                <h1 class="text-xl font-bold">网络设备扫描工具</h1>
+            </div>
+            <div>
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-primary/70 transition-colors duration-300">
+                    <i class="fa fa-moon-o"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要内容 -->
+    <main class="flex-grow container mx-auto px-4 py-8">
+        <!-- 扫描设置 -->
+        <section class="bg-white rounded-xl shadow-lg p-6 mb-8 transform transition-all duration-500 hover:shadow-xl">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fa fa-sliders text-primary mr-2"></i>扫描设置
+            </h2>
+            <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                <div class="flex-grow">
+                    <label for="network" class="block text-sm font-medium text-gray-700 mb-1">网络段</label>
+                    <div class="flex">
+                        <input type="text" id="network" name="network" value="192.168.1.0/24"
+                            class="input-field flex-grow" placeholder="例如: 192.168.1.0/24">
+                        <span class="ml-2 text-gray-500 text-sm self-end mb-1">
+                            <i class="fa fa-info-circle"></i> 支持CIDR格式
+                        </span>
+                    </div>
+                </div>
+                <button id="scan-btn" class="btn-primary mt-4 md:mt-0 flex items-center">
+                    <i class="fa fa-search mr-2"></i>开始扫描
+                </button>
+            </div>
+
+            <!-- 扫描进度 -->
+            <div id="scan-progress" class="mt-6 hidden">
+                <div class="flex items-center">
+                    <div class="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-primary mr-2"></div>
+                    <span id="progress-text" class="text-gray-700">正在扫描网络设备，请稍候...</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                    <div id="progress-bar" class="bg-primary h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 扫描结果 -->
+        <section class="bg-white rounded-xl shadow-lg p-6 transform transition-all duration-500 hover:shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i class="fa fa-list-alt text-primary mr-2"></i>扫描结果
+                </h2>
+                <div class="flex items-center">
+                    <span id="device-count" class="text-gray-600 mr-2">0 台设备</span>
+                    <div class="relative">
+                        <input type="text" id="search-input" placeholder="搜索设备..."
+                            class="input-field pl-8 pr-3 py-1 text-sm w-48">
+                        <i class="fa fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 设备列表 -->
+            <div id="devices-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- 设备卡片将在这里动态生成 -->
+                <div class="col-span-full text-center py-12 text-gray-500">
+                    <i class="fa fa-wifi text-4xl mb-4 opacity-30"></i>
+                    <p>点击"开始扫描"按钮开始发现网络中的设备</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const scanBtn = document.getElementById('scan-btn');
+            const networkInput = document.getElementById('network');
+            const scanProgress = document.getElementById('scan-progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const devicesContainer = document.getElementById('devices-container');
+            const deviceCount = document.getElementById('device-count');
+            const searchInput = document.getElementById('search-input');
+            const themeToggle = document.getElementById('theme-toggle');
+
+            // 模拟进度条
+            function updateProgress(progress) {
+                progressBar.style.width = `${progress}%`;
+                if (progress < 100) {
+                    progressText.textContent = `正在扫描网络设备，请稍候... ${progress}%`;
+                } else {
+                    progressText.textContent = '扫描完成，正在解析结果...';
+                }
+            }
+
+            // 扫描网络
+            scanBtn.addEventListener('click', function() {
+                const network = networkInput.value.trim();
+                if (!network) {
+                    alert('请输入有效的网络段');
+                    return;
+                }
+
+                // 显示进度
+                scanProgress.classList.remove('hidden');
+                devicesContainer.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fa fa-spinner fa-spin text-4xl mb-4"></i>
+                        <p>正在扫描网络中的设备，请稍候...</p>
+                    </div>
+                `;
+
+                // 模拟进度条
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 5;
+                    if (progress > 100) {
+                        progress = 100;
+                        clearInterval(interval);
+                    }
+                    updateProgress(progress);
+                }, 200);
+
+                // 发送扫描请求
+                fetch('/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ network })
+                })
+                .then(response => response.json())
+                .then(devices => {
+                    // 隐藏进度
+                    scanProgress.classList.add('hidden');
+
+                    if (devices.error) {
+                        devicesContainer.innerHTML = `
+                            <div class="col-span-full bg-red-50 border-l-4 border-red-400 p-4">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        <i class="fa fa-exclamation-triangle text-red-500"></i>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm text-red-700">${devices.error}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // 更新设备计数
+                    deviceCount.textContent = `${devices.length} 台设备`;
+
+                    // 显示设备列表
+                    if (devices.length === 0) {
+                        devicesContainer.innerHTML = `
+                            <div class="col-span-full text-center py-12 text-gray-500">
+                                <i class="fa fa-meh-o text-4xl mb-4 opacity-30"></i>
+                                <p>未发现任何设备，请检查网络连接</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // 生成设备卡片
+                    devicesContainer.innerHTML = '';
+                    devices.forEach(device => {
+                        const isOnline = device.mac !== undefined;
+                        const deviceCard = document.createElement('div');
+                        deviceCard.className = `device-card ${isOnline ? 'device-card-online' : 'device-card-offline'}`;
+                        deviceCard.innerHTML = `
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                    <i class="fa fa-${isOnline ? 'desktop' : 'question-circle'} text-primary"></i>
+                                </div>
+                                <div class="ml-4 flex-grow">
+                                    <h3 class="text-lg font-medium text-gray-900">
+                                        ${device.ip}
+                                        ${isOnline ? `<span class="ml-2 text-xs font-medium bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full">在线</span>` : ''}
+                                    </h3>
+                                    <div class="mt-2 grid grid-cols-1 gap-2">
+                                        <div class="flex items-center text-sm">
+                                            <span class="text-gray-500 w-20">MAC地址:</span>
+                                            <span class="text-gray-900">${device.mac || '未知'}</span>
+                                        </div>
+                                        <div class="flex items-center text-sm">
+                                            <span class="text-gray-500 w-20">厂商:</span>
+                                            <span class="text-gray-900">${device.vendor || '未知'}</span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 flex justify-between items-center">
+                                        <div class="text-xs text-gray-500">
+                                            <i class="fa fa-clock-o"></i> 最后检测: ${new Date().toLocaleTimeString()}
+                                        </div>
+                                        <button class="text-primary hover:text-secondary transition-colors duration-300">
+                                            <i class="fa fa-info-circle"></i> 详情
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        devicesContainer.appendChild(deviceCard);
+                    });
+                })
+                .catch(error => {
+                    // 隐藏进度
+                    scanProgress.classList.add('hidden');
+
+                    devicesContainer.innerHTML = `
+                        <div class="col-span-full bg-red-50 border-l-4 border-red-400 p-4">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <i class="fa fa-exclamation-triangle text-red-500"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-red-700">扫描过程中发生错误: ${error.message}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            });
+
+            // 搜索功能
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const deviceCards = document.querySelectorAll('.device-card');
+
+                deviceCards.forEach(card => {
+                    const cardText = card.textContent.toLowerCase();
+                    if (cardText.includes(searchTerm)) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            });
+
+            // 主题切换
+            themeToggle.addEventListener('click', function() {
+                document.body.classList.toggle('dark-mode');
+                const icon = this.querySelector('i');
+                if (icon.classList.contains('fa-moon-o')) {
+                    icon.classList.remove('fa-moon-o');
+                    icon.classList.add('fa-sun-o');
+                } else {
+                    icon.classList.remove('fa-sun-o');
+                    icon.classList.add('fa-moon-o');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
